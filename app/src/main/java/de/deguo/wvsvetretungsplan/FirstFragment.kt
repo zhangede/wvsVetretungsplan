@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -12,6 +13,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
@@ -48,9 +50,20 @@ class FirstFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         statusTextView = binding.statusTextView
+        statusTextView.setTextColor(Color.parseColor("#006400"))
+
+        val webView: WebView = binding.webView
 
         binding.buttonFirst.setOnClickListener {
+            downloadTable(webView)
             downloadPdf()
+        }
+    }
+
+    private fun downloadTable(webView: WebView) {
+        CoroutineScope(Dispatchers.Main).launch {
+            val tableHtml = getTableHtml()
+            webView.loadData(tableHtml, "text/html", "UTF-8")
         }
     }
 
@@ -61,31 +74,33 @@ class FirstFragment : Fragment() {
 
     private fun downloadPdf() {
         CoroutineScope(Dispatchers.Main).launch {
-            statusTextView.text = "Searching PDF..."
-            val pdfUrl = findPdfUrl()
-            if (pdfUrl != null) {
-                statusTextView.text = "PDF Found，download..."
-                val file = downloadFile(pdfUrl, SUB_DIRECTORY)
-                if (file != null) {
-                    statusTextView.text = "PDF downdloaded successfully"
-                    //showNotification(file)
-                } else {
-                    statusTextView.text = "PDF downloaded failed"
+            statusTextView.text = "Searching PDFs..."
+            val pdfUrls = findPdfUrl()
+            if (pdfUrls.isNotEmpty()) {
+                statusTextView.text = "PDFs Found, downloading..."
+                pdfUrls.forEach { pdfUrl ->
+                    val file = downloadFile(pdfUrl, SUB_DIRECTORY)
+                    if (file != null) {
+                        statusTextView.text = "PDF downloaded successfully: ${file.name}"
+                        //showNotification(file)
+                    } else {
+                        statusTextView.text = "PDF download failed: $pdfUrl"
+                    }
                 }
             } else {
-                statusTextView.text = "PDF not found"
+                statusTextView.text = "No PDFs found"
             }
         }
     }
 
-    private suspend fun findPdfUrl(): String? = withContext(Dispatchers.IO) {
+    private suspend fun findPdfUrl(): List<String> = withContext(Dispatchers.IO) {
         try {
             val doc = Jsoup.connect(url).get()
-            val pdfLink = doc.select("a[href$=.pdf]").firstOrNull()
-            pdfLink?.attr("abs:href")
+            val pdfLinks = doc.select("a[href$=.pdf]")
+            pdfLinks.map { it.attr("abs:href") }
         } catch (e: Exception) {
             e.printStackTrace()
-            null
+            emptyList()
         }
     }
 
@@ -156,5 +171,16 @@ class FirstFragment : Fragment() {
 
         // 显示通知
         notificationManager.notify(1, notification)
+    }
+
+    private suspend fun getTableHtml(): String = withContext(Dispatchers.IO) {
+        try {
+            val doc = Jsoup.connect(url).get()
+            val table = doc.select("table").firstOrNull() // 选择第一个表格
+            table?.outerHtml() ?: "Table not found"
+        } catch (e: Exception) {
+            e.printStackTrace()
+            "Error fetching table data"
+        }
     }
 }
