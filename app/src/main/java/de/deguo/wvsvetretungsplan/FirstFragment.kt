@@ -10,12 +10,18 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import de.deguo.wvsvetretungsplan.databinding.FragmentFirstBinding
@@ -81,8 +87,31 @@ class FirstFragment : Fragment() {
                 pdfUrls.forEach { pdfUrl ->
                     val file = downloadFile(pdfUrl, SUB_DIRECTORY)
                     if (file != null) {
-                        statusTextView.text = "PDF downloaded successfully: ${file.name}"
-                        //showNotification(file)
+                        val text = "PDF downloaded successfully: ${file.name}"
+                        val spannableString = SpannableString(text)
+                        val clickableSpan = object : ClickableSpan() {
+                            override fun onClick(widget: View) {
+                                // Open the PDF file using an Intent
+                                val intent = Intent(Intent.ACTION_VIEW)
+                                val uri = FileProvider.getUriForFile(
+                                    requireContext(),
+                                    "de.deguo.wvsvetretungsplan.fileprovider", // Replace with your FileProvider authority
+                                    file
+                                )
+                                intent.setDataAndType(uri, "application/pdf")
+                                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                requireContext().startActivity(intent)
+                            }
+
+                            override fun updateDrawState(ds: TextPaint) {
+                                super.updateDrawState(ds)
+                                ds.isUnderlineText = true // Add underline to the link
+                                ds.color = ContextCompat.getColor(requireContext(), android.R.color.holo_blue_dark) // Set link color
+                            }
+                        }
+                        spannableString.setSpan(clickableSpan, text.indexOf(file.name), text.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        statusTextView.text = spannableString
+                        statusTextView.movementMethod = LinkMovementMethod.getInstance() // Make the TextView clickable
                     } else {
                         statusTextView.text = "PDF download failed: $pdfUrl"
                     }
@@ -96,8 +125,8 @@ class FirstFragment : Fragment() {
     private suspend fun findPdfUrl(): List<String> = withContext(Dispatchers.IO) {
         try {
             val doc = Jsoup.connect(url).get()
-            val pdfLinks = doc.select("a[href$=.pdf]")
-            pdfLinks.map { it.attr("abs:href") }
+            val planPdfLinks = doc.select("a[href*=plan][href$=.pdf]")
+            planPdfLinks.map { it.attr("abs:href") }
         } catch (e: Exception) {
             e.printStackTrace()
             emptyList()
